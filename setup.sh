@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  setup.sh — One-shot Raspberry Pi setup script for the VALORANT Tournament Bot
 #
-#  Run once on a fresh Pi:
+#  Run once on a fresh Pi (from /home/pi/Documents/ValorantPCTournament):
 #    chmod +x setup.sh && ./setup.sh
 # ─────────────────────────────────────────────────────────────────────────────
 

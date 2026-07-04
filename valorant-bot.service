@@ -3,7 +3,7 @@
 #
 #  INSTALLATION (on Raspberry Pi):
 #  1. Copy this file to /etc/systemd/system/valorant-bot.service
-#  2. Edit the paths below to match your actual setup
+#  2. Paths are already set to /home/pi/Documents/ValorantPCTournament
 #  3. sudo systemctl daemon-reload
 #  4. sudo systemctl enable valorant-bot   ← start on boot
 #  5. sudo systemctl start  valorant-bot   ← start right now
@@ -31,10 +31,10 @@ User=pi
 Group=pi
 
 # Absolute path to your project directory
-WorkingDirectory=/home/pi/valorant-bot
+WorkingDirectory=/home/pi/Documents/ValorantPCTournament
 
 # Absolute path to the Python interpreter inside your venv
-ExecStart=/home/pi/valorant-bot/venv/bin/python bot.py
+ExecStart=/home/pi/Documents/ValorantPCTournament/venv/bin/python bot.py
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Gracefully stop: send SIGTERM, wait 15 s, then SIGKILL
@@ -49,7 +49,7 @@ RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/pi/valorant-bot   # the bot writes bot.log here
+ReadWritePaths=/home/pi/Documents/ValorantPCTournament   # the bot writes bot.log here
 
 # Stdout/stderr go to the journal (view with: journalctl -u valorant-bot -f)
 StandardOutput=journal
