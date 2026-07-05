@@ -1,7 +1,7 @@
 -- =============================================================================
 --  VALORANT PC Tournament — PostgreSQL Schema
 --  Run this file with:
---    psql -U valorant_bot -d valorant_tournament -f schema.sql
+--    psql -U valorant_bot -d valorant_pc_tournament -h localhost -f schema.sql
 -- =============================================================================
 
 -- ── Custom Types ──────────────────────────────────────────────────────────────
