@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  valorant-web.service  —  systemd unit for the VALORANT Verification Web Server
+#
+#  INSTALLATION (on Raspberry Pi):
+#  1. Copy this file to /etc/systemd/system/valorant-web.service
+#  2. Paths are already set to /home/kartiksakhuja02/Documents/ValorantPCTournament
+#  3. sudo systemctl daemon-reload
+#  4. sudo systemctl enable valorant-web   ← start on boot
+#  5. sudo systemctl start  valorant-web   ← start right now
+#
+#  USEFUL COMMANDS:
+#    sudo systemctl status  valorant-web   ← check if it's running
+#    sudo systemctl restart valorant-web   ← restart after code changes
+#    sudo systemctl stop    valorant-web   ← stop the server
+#    journalctl -u valorant-web -f         ← live logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=VALORANT Tournament Email Verification Server
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=kartiksakhuja02
+Group=kartiksakhuja02
+
+WorkingDirectory=/home/kartiksakhuja02/Documents/ValorantPCTournament
+
+# Run uvicorn on localhost port 8080 (exposed via Cloudflare Tunnel)
+ExecStart=/home/kartiksakhuja02/Documents/ValorantPCTournament/venv/bin/uvicorn web_server:app --host 127.0.0.1 --port 8080
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+Restart=always
+RestartSec=10
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/kartiksakhuja02/Documents/ValorantPCTournament
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=valorant-web
+
+[Install]
+WantedBy=multi-user.target

@@ -18,7 +18,8 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 
 import asyncpg
 import discord
@@ -92,21 +93,53 @@ def _reg_panel_embed() -> discord.Embed:
 
 # ── Logo Collection ───────────────────────────────────────────────────────────
 
-async def _collect_logo(
+# ── Post-Registration Workflow (Gmail verification + Logo collection) ─────────
+
+async def _post_registration_workflow(
     client: discord.Client,
     thread: discord.Thread,
     user: discord.Member,
     team_id: int,
     team_name: str,
     pool: asyncpg.Pool,
+    token: str,
+    captain_ign: str,
+    email: str,
 ) -> None:
     """
-    After registration, prompt the captain to upload their team logo as an
-    image. Saves it to logos/<team_id>_<safe_name>.<ext> on disk and updates
-    the teams.logo_url column with the local file path.
+    1. Sends verification link via Gmail API.
+    2. Prompts captain to check Gmail inbox.
+    3. Prompts captain to upload team logo.
     """
+    # Generate links using server url in config
+    base_url = getattr(config, "CONFIRMATION_SERVER_URL", "http://localhost:8080").rstrip("/")
+    confirm_link = f"{base_url}/confirm/{token}"
+    resend_link = f"{base_url}/resend-request/{token}"
+
+    log.info(f"Triggering email dispatch for team {team_name} ({email})...")
+    
+    # Dispatch email using asyncio.to_thread to prevent blocking the discord event loop
+    email_sent = await asyncio.to_thread(
+        mailer.send_confirmation_email,
+        captain_ign,
+        email,
+        confirm_link,
+        resend_link
+    )
+
+    if email_sent:
+        await thread.send(
+            f"{user.mention} — Please check your **Gmail** to confirm your team (check spam folders too)."
+        )
+    else:
+        log.error(f"Gmail confirmation dispatch failed for team '{team_name}'")
+        await thread.send(
+            f"{user.mention} — We had an issue sending your confirmation email. Please ask an admin to check the logs."
+        )
+
+    # Prompt for team logo
     await thread.send(
-        f"{user.mention} — Please send your **team logo** as an image (PNG or JPG).\n"
+        "Please send your **team logo** as an image (PNG or JPG).\n"
         "You have 2 minutes. Reply `skip` to skip."
     )
 
@@ -214,6 +247,9 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         team_name = self.team_name.value.strip()
         discord_id = str(interaction.user.id)
 
+        token = None
+        team_id = None
+
         # ── Database ──────────────────────────────────────────────────────────
         try:
             async with pool.acquire() as conn:
@@ -234,28 +270,41 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
                     )
                     return
 
-                # Insert team (logo_url left NULL — collected separately as image)
-                team_id: int = await conn.fetchval(
-                    """
-                    INSERT INTO teams
-                        (team_name, captain_discord_id, captain_email,
-                         region, captain_ign)
-                    VALUES ($1, $2, $3, $4, $5)
-                    RETURNING team_id
-                    """,
-                    team_name, discord_id, email, region, ign,
-                )
+                # Process everything inside a transaction
+                async with conn.transaction():
+                    # Insert team (logo_url left NULL — collected separately as image)
+                    team_id = await conn.fetchval(
+                        """
+                        INSERT INTO teams
+                            (team_name, captain_discord_id, captain_email,
+                             region, captain_ign)
+                        VALUES ($1, $2, $3, $4, $5)
+                        RETURNING team_id
+                        """,
+                        team_name, discord_id, email, region, ign,
+                    )
 
-                # Insert captain as player
-                await conn.execute(
-                    """
-                    INSERT INTO players
-                        (team_id, discord_id, email, ign, region,
-                         is_captain, joined_server, verified)
-                    VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, FALSE)
-                    """,
-                    team_id, discord_id, email, ign, region,
-                )
+                    # Insert captain as player
+                    await conn.execute(
+                        """
+                        INSERT INTO players
+                            (team_id, discord_id, email, ign, region,
+                             is_captain, joined_server, verified)
+                        VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, FALSE)
+                        """,
+                        team_id, discord_id, email, ign, region,
+                    )
+
+                    # Generate and insert 1-hour email confirmation token
+                    token = secrets.token_urlsafe(32)
+                    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+                    await conn.execute(
+                        """
+                        INSERT INTO email_tokens (token, team_id, expires_at)
+                        VALUES ($1, $2, $3)
+                        """,
+                        token, team_id, expires_at
+                    )
 
         except asyncpg.UniqueViolationError:
             await interaction.followup.send(
@@ -275,8 +324,8 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         embed = discord.Embed(
             title="Team Registered",
             description=(
-                "Please check your Gmail to confirm your team (check spam folders too).\n"
-                "Once confirmed, staff will review your application."
+                "Your team has been submitted for review.\n"
+                "Please check your Gmail inbox (and spam folder) to verify your account."
             ),
             colour=discord.Colour.from_str("#00C851"),
             timestamp=datetime.now(timezone.utc),
@@ -284,38 +333,24 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         embed.add_field(name="Team", value=f"**{team_name}**", inline=True)
         embed.add_field(name="Captain IGN", value=f"`{ign}`", inline=True)
         embed.add_field(name="Region", value=f"`{region}`", inline=True)
-        embed.add_field(name="Status", value="`Pending Review`", inline=False)
+        embed.add_field(name="Status", value="`Pending Email Verification`", inline=False)
         embed.set_footer(text="VALORANT PC Tournament  •  Registration Portal")
 
         await interaction.followup.send(embed=embed)
 
-        # ── Background Post-Submit Tasks ──────────────────────────────────────
-        if isinstance(interaction.channel, discord.Thread):
-            async def run_post_submit_tasks():
-                # 1. Send confirmation email via Gmail API
-                try:
-                    await interaction.channel.send("Sending confirmation email...")
-                    await mailer.send_confirmation_email(pool, team_id, ign, email)
-                    await interaction.channel.send(
-                        f"Confirmation email sent to `{email}`. Please check your Gmail (including spam folder) to confirm your team!"
-                    )
-                except Exception as e:
-                    log.exception("Failed to send confirmation email")
-                    await interaction.channel.send(
-                        "Error sending confirmation email. Please contact a moderator to verify manually."
-                    )
-
-                # 2. Collect team logo image
-                await _collect_logo(
-                    interaction.client,
-                    interaction.channel,
-                    interaction.user,
-                    team_id,
-                    team_name,
-                    pool,
-                )
-
-            asyncio.create_task(run_post_submit_tasks())
+        # Trigger background workflow for email verification link and logo upload
+        if token and team_id and isinstance(interaction.channel, discord.Thread):
+            asyncio.create_task(_post_registration_workflow(
+                interaction.client,
+                interaction.channel,
+                interaction.user,
+                team_id,
+                team_name,
+                pool,
+                token,
+                ign,
+                email
+            ))
 
         # Rename the thread to reflect submission
         if isinstance(interaction.channel, discord.Thread):

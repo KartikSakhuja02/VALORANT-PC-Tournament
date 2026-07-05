@@ -1,60 +1,48 @@
 """
-gmail_setup.py — One-time Gmail OAuth2 setup script.
+gmail_setup.py — One-time setup script to authenticate with Gmail API and generate token.json.
+Make sure to put your credentials.json (downloaded from Google Cloud Console) in this folder before running.
 
-Run this ONCE on a machine with a web browser (your Windows PC):
-    pip install google-auth-oauthlib
-    python gmail_setup.py
-
-It will open a browser, ask you to sign in with the Gmail account that
-will send tournament emails, then print the credentials to paste into .env.
-
-Prerequisites:
-  1. Go to https://console.cloud.google.com/
-  2. Create a project → Enable "Gmail API"
-  3. OAuth consent screen → External → Add your Gmail as test user
-  4. Credentials → Create OAuth client ID → Desktop app
-  5. Download the JSON → save as "credentials.json" in this folder
-  6. Run this script
+Usage:
+  python gmail_setup.py
 """
 
-import json
 import os
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 
-try:
-    from google_auth_oauthlib.flow import InstalledAppFlow
-except ImportError:
-    print("Run: pip install google-auth-oauthlib")
-    raise
-
+# If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-CREDS_FILE = "credentials.json"
 
-
-def main() -> None:
-    if not os.path.exists(CREDS_FILE):
-        print(f"\n[ERROR] '{CREDS_FILE}' not found.")
-        print("  Download it from Google Cloud Console:")
-        print("  Credentials → your OAuth Desktop client → Download JSON")
-        print(f"  Save it as '{CREDS_FILE}' in the project root.\n")
-        return
-
-    flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
-    creds = flow.run_local_server(port=0)
-
-    # Also extract client_id / client_secret from the downloaded JSON
-    with open(CREDS_FILE) as f:
-        raw = json.load(f)
-    client_info = raw.get("installed") or raw.get("web") or {}
-
-    print("\n" + "=" * 60)
-    print("  Copy these values into your .env file on the Pi:")
-    print("=" * 60)
-    print(f"GMAIL_CLIENT_ID={client_info.get('client_id', creds.client_id)}")
-    print(f"GMAIL_CLIENT_SECRET={client_info.get('client_secret', creds.client_secret)}")
-    print(f"GMAIL_REFRESH_TOKEN={creds.refresh_token}")
-    print("=" * 60)
-    print("\nDone! You can delete credentials.json from the Pi (keep it safe).\n")
-
+def main():
+    creds = None
+    # The file token.json stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        print("Existing token.json found.")
+    
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            print("Token expired. Refreshing...")
+            creds.refresh(Request())
+        else:
+            if not os.path.exists("credentials.json"):
+                print("Error: 'credentials.json' not found!")
+                print("Please download it from the Google Cloud Console (OAuth Client ID -> Desktop App)")
+                print("and place it in this directory: c:\\Users\\karti\\OneDrive\\Documents\\VALORANT PC Tournament\\credentials.json")
+                return
+            
+            print("Starting authorization flow...")
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+        # Save the credentials for the next run
+        with open("token.json", "w") as token_file:
+            token_file.write(creds.to_json())
+        print("Success! token.json has been written.")
 
 if __name__ == "__main__":
     main()
