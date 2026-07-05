@@ -36,22 +36,8 @@ CREATE TABLE teams (
     logo_url            TEXT,
     discord_role_id     VARCHAR(32)     UNIQUE,
     registration_status registration_status NOT NULL DEFAULT 'pending',
-    email_confirmed     BOOLEAN         NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
-
--- ── Email Verification Tokens ─────────────────────────────────────────────────
-
-CREATE TABLE email_tokens (
-    token        VARCHAR(128)    PRIMARY KEY,
-    team_id      INTEGER         NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
-    expires_at   TIMESTAMPTZ     NOT NULL,
-    used         BOOLEAN         NOT NULL DEFAULT FALSE,
-    created_at   TIMESTAMPTZ     NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_email_tokens_team_id ON email_tokens(team_id);
-
 
 -- ── Players ───────────────────────────────────────────────────────────────────
 

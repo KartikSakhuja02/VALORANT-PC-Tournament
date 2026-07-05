@@ -42,6 +42,3 @@ DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
 DB_NAME: str = _require("DB_NAME")
 DB_USER: str = _require("DB_USER")
 DB_PASSWORD: str = _require("DB_PASSWORD")
-# ── Web Server & Verification ──────────────────────────────────────────────────
-CONFIRMATION_SERVER_URL: str = os.getenv("CONFIRMATION_SERVER_URL", "http://localhost:8080")
-GMAIL_SENDER: str = os.getenv("GMAIL_SENDER", "me")
