@@ -42,3 +42,12 @@ DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
 DB_NAME: str = _require("DB_NAME")
 DB_USER: str = _require("DB_USER")
 DB_PASSWORD: str = _require("DB_PASSWORD")
+
+# ── Gmail API Configuration ───────────────────────────────────────────────────
+GMAIL_CLIENT_ID: str = _require("GMAIL_CLIENT_ID")
+GMAIL_CLIENT_SECRET: str = _require("GMAIL_CLIENT_SECRET")
+GMAIL_REFRESH_TOKEN: str = _require("GMAIL_REFRESH_TOKEN")
+GMAIL_SENDER: str = _require("GMAIL_SENDER")
+
+# ── Frontend Confirmation Configuration ─────────────────────────────────────────
+FRONTEND_URL: str = _require("FRONTEND_URL")

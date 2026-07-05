@@ -1,0 +1,20 @@
+[Unit]
+Description=VALORANT Tournament — Email Confirmation Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=kartiksakhuja02
+WorkingDirectory=/home/kartiksakhuja02/Documents/ValorantPCTournament
+ExecStart=/home/kartiksakhuja02/Documents/ValorantPCTournament/venv/bin/uvicorn \
+    confirmation_server.main:app \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --no-access-log
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/kartiksakhuja02/Documents/ValorantPCTournament/confirmation_server.log
+StandardError=append:/home/kartiksakhuja02/Documents/ValorantPCTournament/confirmation_server.log
+
+[Install]
+WantedBy=multi-user.target

@@ -25,6 +25,7 @@ import discord
 from discord.ext import commands
 
 import config
+import mailer
 
 log = logging.getLogger("valorant-bot.registration")
 
@@ -274,8 +275,8 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         embed = discord.Embed(
             title="Team Registered",
             description=(
-                "Your team has been submitted for review.\n"
-                "Staff will approve or contact you shortly."
+                "Please check your Gmail to confirm your team (check spam folders too).\n"
+                "Once confirmed, staff will review your application."
             ),
             colour=discord.Colour.from_str("#00C851"),
             timestamp=datetime.now(timezone.utc),
@@ -288,16 +289,33 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
 
         await interaction.followup.send(embed=embed)
 
-        # Prompt for logo image in the thread (runs concurrently, doesn't block)
+        # ── Background Post-Submit Tasks ──────────────────────────────────────
         if isinstance(interaction.channel, discord.Thread):
-            asyncio.create_task(_collect_logo(
-                interaction.client,
-                interaction.channel,
-                interaction.user,
-                team_id,
-                team_name,
-                pool,
-            ))
+            async def run_post_submit_tasks():
+                # 1. Send confirmation email via Gmail API
+                try:
+                    await interaction.channel.send("Sending confirmation email...")
+                    await mailer.send_confirmation_email(pool, team_id, ign, email)
+                    await interaction.channel.send(
+                        f"Confirmation email sent to `{email}`. Please check your Gmail (including spam folder) to confirm your team!"
+                    )
+                except Exception as e:
+                    log.exception("Failed to send confirmation email")
+                    await interaction.channel.send(
+                        "Error sending confirmation email. Please contact a moderator to verify manually."
+                    )
+
+                # 2. Collect team logo image
+                await _collect_logo(
+                    interaction.client,
+                    interaction.channel,
+                    interaction.user,
+                    team_id,
+                    team_name,
+                    pool,
+                )
+
+            asyncio.create_task(run_post_submit_tasks())
 
         # Rename the thread to reflect submission
         if isinstance(interaction.channel, discord.Thread):
