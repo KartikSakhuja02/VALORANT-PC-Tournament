@@ -126,8 +126,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         region = self.region.value.strip().upper()
         if region not in VALID_REGIONS:
             await interaction.followup.send(
-                f"❌ **Invalid region** `{region}`.\n"
-                f"Valid options: `NA` `EU` `AP` `KR` `LATAM` `BR` `ME`",
+                f"Invalid region `{region}`. Valid options: `NA` `EU` `AP` `KR` `LATAM` `BR` `ME`",
                 ephemeral=True,
             )
             return
@@ -135,7 +134,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         email = self.captain_email.value.strip().lower()
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             await interaction.followup.send(
-                "❌ **Invalid email address.** Please enter a real email.",
+                "Invalid email address. Please enter a real email.",
                 ephemeral=True,
             )
             return
@@ -143,7 +142,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         logo = self.logo_url.value.strip() or None
         if logo and not re.match(r"^https?://", logo):
             await interaction.followup.send(
-                "❌ **Logo URL must start with** `http://` or `https://`.",
+                "Logo URL must start with `http://` or `https://`.",
                 ephemeral=True,
             )
             return
@@ -167,7 +166,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
                 )
                 if row:
                     await interaction.followup.send(
-                        "❌ A team already exists with that **name**, **captain**, or **email**.",
+                        "A team already exists with that name, captain, or email.",
                         ephemeral=True,
                     )
                     return
@@ -197,21 +196,21 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
 
         except asyncpg.UniqueViolationError:
             await interaction.followup.send(
-                "❌ Registration failed: duplicate team name or captain.",
+                "Registration failed: duplicate team name or captain.",
                 ephemeral=True,
             )
             return
         except Exception as exc:
             log.exception("DB error during registration")
             await interaction.followup.send(
-                f"❌ Database error — please contact a moderator.\n`{exc}`",
+                f"Database error — please contact a moderator.\n`{exc}`",
                 ephemeral=True,
             )
             return
 
         # ── Success ───────────────────────────────────────────────────────────
         embed = discord.Embed(
-            title="✅  Team Registered!",
+            title="Team Registered",
             description=(
                 "Your team has been submitted for review.\n"
                 "Staff will approve or contact you shortly."
@@ -222,7 +221,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         embed.add_field(name="Team", value=f"**{team_name}**", inline=True)
         embed.add_field(name="Captain IGN", value=f"`{ign}`", inline=True)
         embed.add_field(name="Region", value=f"`{region}`", inline=True)
-        embed.add_field(name="Status", value="`Pending Review` 🕐", inline=False)
+        embed.add_field(name="Status", value="`Pending Review`", inline=False)
         embed.set_footer(text="VALORANT PC Tournament  •  Registration Portal")
         if logo:
             embed.set_thumbnail(url=logo)
@@ -232,7 +231,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         # Rename the thread to reflect submission
         if isinstance(interaction.channel, discord.Thread):
             try:
-                await interaction.channel.edit(name=f"✅ {team_name}")
+                await interaction.channel.edit(name=f"registered-{team_name}")
             except discord.HTTPException:
                 pass
 
@@ -247,7 +246,7 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         log.exception("Modal error")
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                "❌ An unexpected error occurred. Please try again.", ephemeral=True
+                "An unexpected error occurred. Please try again.", ephemeral=True
             )
 
 
@@ -265,7 +264,6 @@ class ThreadStartView(discord.ui.View):
     @discord.ui.button(
         label="Start Registration",
         style=discord.ButtonStyle.success,
-        emoji="📋",
         custom_id="persistent_thread_start_btn",
     )
     async def start(
@@ -280,7 +278,7 @@ class ThreadStartView(discord.ui.View):
                 owner_id = int(parts[1])
                 if interaction.user.id != owner_id:
                     await interaction.response.send_message(
-                        "❌ Only the person who opened this thread can register.",
+                        "Only the person who opened this thread can register.",
                         ephemeral=True,
                     )
                     return
@@ -302,7 +300,6 @@ class RegistrationPanelView(discord.ui.View):
     @discord.ui.button(
         label="Register Your Team",
         style=discord.ButtonStyle.danger,
-        emoji="🎯",
         custom_id="persistent_register_panel_btn",
     )
     async def register(
@@ -319,8 +316,7 @@ class RegistrationPanelView(discord.ui.View):
             )
         if existing:
             await interaction.followup.send(
-                f"❌ You already registered team **{existing['team_name']}**.\n"
-                "Contact a moderator if you need to make changes.",
+                f"You already registered team **{existing['team_name']}**. Contact a moderator if you need to make changes.",
                 ephemeral=True,
             )
             return
@@ -343,7 +339,9 @@ class RegistrationPanelView(discord.ui.View):
                 reason=f"Registration thread for {interaction.user}",
             )
 
-        # ── Add moderators ────────────────────────────────────────────────────
+        # Add the registering user first, then moderators
+        await thread.add_user(interaction.user)
+
         if config.MOD_ROLE_ID:
             mod_role = interaction.guild.get_role(config.MOD_ROLE_ID)
             if mod_role:
@@ -353,29 +351,24 @@ class RegistrationPanelView(discord.ui.View):
                     except discord.HTTPException:
                         pass
 
-        # Add the registering user
-        await thread.add_user(interaction.user)
-
         # ── Send prompt in thread ─────────────────────────────────────────────
         embed = discord.Embed(
-            title="🎯  VALORANT PC Tournament — Register Your Team",
+            title="VALORANT PC Tournament — Team Registration",
             description=(
-                f"Hey {interaction.user.mention}! 👋\n\n"
-                "You're one step away from entering the tournament.\n"
-                "Click **Start Registration** to fill in your team details.\n"
-                "\u200b"
+                f"{interaction.user.mention}\n\n"
+                "Click **Start Registration** below to fill in your team details."
             ),
             colour=discord.Colour.from_str("#FF4655"),
             timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(
-            name="📝  You'll be asked for",
+            name="You will be asked for",
             value=(
-                "• Your **In-Game Name** (IGN)\n"
-                "• **Team Name**\n"
-                "• **Region** (NA / EU / AP / KR / LATAM / BR / ME)\n"
-                "• Your **Email Address**\n"
-                "• **Team Logo URL** *(optional)*"
+                "• In-Game Name (IGN)\n"
+                "• Team Name\n"
+                "• Region (NA / EU / AP / KR / LATAM / BR / ME)\n"
+                "• Email Address\n"
+                "• Team Logo URL (optional)"
             ),
             inline=False,
         )
@@ -388,7 +381,7 @@ class RegistrationPanelView(discord.ui.View):
         )
 
         await interaction.followup.send(
-            f"✅ Your registration thread is ready: {thread.mention}",
+            f"Your registration thread is ready: {thread.mention}",
             ephemeral=True,
         )
         log.info(f"Registration thread created for {interaction.user} ({interaction.user.id})")
