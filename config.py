@@ -20,11 +20,25 @@ def _require(key: str) -> str:
     return value
 
 
+def _optional_int(key: str) -> "int | None":
+    v = os.getenv(key)
+    return int(v) if v else None
+
+
 # ── Required ──────────────────────────────────────────────────────────────────
 DISCORD_TOKEN: str = _require("DISCORD_TOKEN")
 GUILD_ID: int = int(_require("GUILD_ID"))
 
 # ── Optional ──────────────────────────────────────────────────────────────────
-LOG_CHANNEL_ID: int | None = (
-    int(os.getenv("LOG_CHANNEL_ID")) if os.getenv("LOG_CHANNEL_ID") else None
-)
+LOG_CHANNEL_ID: "int | None" = _optional_int("LOG_CHANNEL_ID")
+
+# ── Registration ───────────────────────────────────────────────────────────────
+REGISTRATION_CHANNEL_ID: "int | None" = _optional_int("REGISTRATION_CHANNEL_ID")
+MOD_ROLE_ID: "int | None" = _optional_int("MOD_ROLE_ID")
+
+# ── Database ───────────────────────────────────────────────────────────────────
+DB_HOST: str = os.getenv("DB_HOST", "localhost")
+DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
+DB_NAME: str = _require("DB_NAME")
+DB_USER: str = _require("DB_USER")
+DB_PASSWORD: str = _require("DB_PASSWORD")

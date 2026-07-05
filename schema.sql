@@ -31,6 +31,7 @@ CREATE TABLE teams (
     team_name           VARCHAR(64)     NOT NULL UNIQUE,
     captain_discord_id  VARCHAR(32)     NOT NULL UNIQUE,
     captain_email       VARCHAR(255)    NOT NULL UNIQUE,
+    captain_ign         VARCHAR(64)     NOT NULL,
     region              region          NOT NULL,
     logo_url            TEXT,
     discord_role_id     VARCHAR(32)     UNIQUE,

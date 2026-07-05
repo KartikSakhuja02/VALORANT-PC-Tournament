@@ -1,12 +1,13 @@
 """
 bot.py — Entry point for the VALORANT PC Tournament Discord Bot.
 
-Features implemented so far:
-  • /ping  — Latency check (gateway + REST round-trip)
+Features:
+  • /ping         — Latency check (gateway + REST round-trip)
+  • Registration  — Persistent team registration panel (cogs/registration.py)
 
 Architecture:
   • discord.py 2.x with app_commands (slash commands)
-  • Cog-ready structure — drop new cogs into /cogs/ as the bot grows
+  • asyncpg pool shared across all cogs via bot.db_pool
   • Guild-scoped command sync for instant updates during development
 """
 
@@ -19,6 +20,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+import db
 from config import DISCORD_TOKEN, GUILD_ID, LOG_CHANNEL_ID
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -37,26 +39,35 @@ log = logging.getLogger("valorant-bot")
 # ── Intents ───────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True       # required for member-lookup features later
-intents.message_content = True  # required if you ever need prefix commands
+intents.members = True        # required for member-lookup & thread management
+intents.message_content = True
 
 
 # ── Bot class ─────────────────────────────────────────────────────────────────
 class ValorantBot(commands.Bot):
     def __init__(self) -> None:
         super().__init__(
-            command_prefix="!",  # fallback prefix (slash commands are primary)
+            command_prefix="!",
             intents=intents,
             help_command=None,
         )
         self.target_guild = discord.Object(id=GUILD_ID)
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
+        self.db_pool = None  # set in setup_hook
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
     async def setup_hook(self) -> None:
         """Called once after login, before connecting to the gateway."""
-        # Sync slash commands to the guild immediately (guild sync is instant;
-        # global sync can take up to 1 hour).
+        # 1. Connect to PostgreSQL
+        log.info("Connecting to PostgreSQL...")
+        self.db_pool = await db.create_pool()
+        log.info("Database pool ready.")
+
+        # 2. Load cogs
+        await self.load_extension("cogs.registration")
+        log.info("Cogs loaded.")
+
+        # 3. Sync slash commands to guild (instant vs up-to-1-hour for global)
         self.tree.copy_global_to(guild=self.target_guild)
         synced = await self.tree.sync(guild=self.target_guild)
         log.info(f"Synced {len(synced)} slash command(s) to guild {GUILD_ID}.")
@@ -75,6 +86,11 @@ class ValorantBot(commands.Bot):
             ),
         )
 
+        # Send/verify the persistent registration panel
+        reg_cog = self.get_cog("Registration")
+        if reg_cog:
+            await reg_cog.send_registration_panel()
+
         # Optional startup log message in a designated channel
         if LOG_CHANNEL_ID:
             channel = self.get_channel(LOG_CHANNEL_ID)
@@ -82,11 +98,18 @@ class ValorantBot(commands.Bot):
                 embed = discord.Embed(
                     title="✅ Bot Online",
                     description="VALORANT Tournament Bot is up and running!",
-                    colour=discord.Colour.from_str("#FF4655"),  # Valorant red
+                    colour=discord.Colour.from_str("#FF4655"),
                     timestamp=datetime.datetime.now(datetime.timezone.utc),
                 )
                 embed.set_footer(text="VALORANT PC Tournament Bot")
                 await channel.send(embed=embed)
+
+    async def close(self) -> None:
+        """Gracefully close DB pool on shutdown."""
+        if self.db_pool:
+            await self.db_pool.close()
+            log.info("Database pool closed.")
+        await super().close()
 
     async def on_command_error(
         self, ctx: commands.Context, error: commands.CommandError
@@ -102,32 +125,28 @@ bot = ValorantBot()
 @bot.tree.command(name="ping", description="Check the bot's latency and status.")
 async def ping(interaction: discord.Interaction) -> None:
     """Returns gateway latency and a REST API round-trip time."""
-    await interaction.response.defer(ephemeral=False)  # avoids 3-second timeout
+    await interaction.response.defer(ephemeral=False)
 
-    # Gateway (WebSocket) latency
     ws_latency_ms = round(bot.latency * 1000)
 
-    # REST round-trip — time a follow-up message edit
     before = datetime.datetime.now(datetime.timezone.utc)
     msg = await interaction.followup.send("📡 Calculating ping…", wait=True)
     after = datetime.datetime.now(datetime.timezone.utc)
     rest_latency_ms = round((after - before).total_seconds() * 1000)
 
-    # Uptime
     uptime_delta = datetime.datetime.now(datetime.timezone.utc) - bot.start_time
     hours, remainder = divmod(int(uptime_delta.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
     uptime_str = f"{hours}h {minutes}m {seconds}s"
 
-    # Colour based on latency quality
     if ws_latency_ms < 100:
-        colour = discord.Colour.from_str("#00C851")  # green — great
+        colour = discord.Colour.from_str("#00C851")
         quality = "🟢 Excellent"
     elif ws_latency_ms < 200:
-        colour = discord.Colour.from_str("#FFD700")  # yellow — ok
+        colour = discord.Colour.from_str("#FFD700")
         quality = "🟡 Good"
     else:
-        colour = discord.Colour.from_str("#FF4655")  # red — poor
+        colour = discord.Colour.from_str("#FF4655")
         quality = "🔴 Poor"
 
     embed = discord.Embed(
