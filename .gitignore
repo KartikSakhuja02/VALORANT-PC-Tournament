@@ -18,6 +18,7 @@ build/
 bot.log
 *.log
 bot_state.json
+logos/
 
 # ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store

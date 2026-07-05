@@ -13,6 +13,7 @@ Both views (panel + thread start) are PERSISTENT — they survive bot restarts.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -88,6 +89,81 @@ def _reg_panel_embed() -> discord.Embed:
     return embed
 
 
+# ── Logo Collection ───────────────────────────────────────────────────────────
+
+async def _collect_logo(
+    client: discord.Client,
+    thread: discord.Thread,
+    user: discord.Member,
+    team_id: int,
+    team_name: str,
+    pool: asyncpg.Pool,
+) -> None:
+    """
+    After registration, prompt the captain to upload their team logo as an
+    image. Saves it to logos/<team_id>_<safe_name>.<ext> on disk and updates
+    the teams.logo_url column with the local file path.
+    """
+    await thread.send(
+        f"{user.mention} — Please send your **team logo** as an image (PNG or JPG).\n"
+        "You have 2 minutes. Reply `skip` to skip."
+    )
+
+    def _check(m: discord.Message) -> bool:
+        if m.channel.id != thread.id or m.author.id != user.id:
+            return False
+        if m.content.strip().lower() == "skip":
+            return True
+        return bool(
+            m.attachments
+            and m.attachments[0].content_type
+            and m.attachments[0].content_type.startswith("image/")
+        )
+
+    try:
+        msg: discord.Message = await client.wait_for(
+            "message", check=_check, timeout=120.0
+        )
+    except asyncio.TimeoutError:
+        await thread.send("No logo received. A moderator can add it later.")
+        return
+
+    if msg.content.strip().lower() == "skip":
+        await thread.send("Logo skipped. A moderator can add it later.")
+        return
+
+    attachment = msg.attachments[0]
+
+    # Determine extension
+    ext = "png"
+    if "." in attachment.filename:
+        ext = attachment.filename.rsplit(".", 1)[-1].lower()
+    if ext not in {"png", "jpg", "jpeg", "webp", "gif"}:
+        ext = "png"
+
+    # Ensure logos directory exists (relative to project root)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    logos_dir = os.path.join(project_root, "logos")
+    os.makedirs(logos_dir, exist_ok=True)
+
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", team_name)
+    filename = f"{team_id}_{safe_name}.{ext}"
+    filepath = os.path.join(logos_dir, filename)
+
+    await attachment.save(filepath)
+    log.info(f"Logo saved for team '{team_name}' → {filepath}")
+
+    # Update DB
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE teams SET logo_url = $1 WHERE team_id = $2",
+            filepath,
+            team_id,
+        )
+
+    await thread.send("Logo saved. Your registration is complete.")
+
+
 # ── Modal ─────────────────────────────────────────────────────────────────────
 
 class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
@@ -111,12 +187,6 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         placeholder="captain@example.com",
         max_length=255,
     )
-    logo_url = discord.ui.TextInput(
-        label="Team Logo URL  (optional)",
-        placeholder="https://i.imgur.com/example.png",
-        required=False,
-        max_length=500,
-    )
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -135,14 +205,6 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             await interaction.followup.send(
                 "Invalid email address. Please enter a real email.",
-                ephemeral=True,
-            )
-            return
-
-        logo = self.logo_url.value.strip() or None
-        if logo and not re.match(r"^https?://", logo):
-            await interaction.followup.send(
-                "Logo URL must start with `http://` or `https://`.",
                 ephemeral=True,
             )
             return
@@ -171,16 +233,16 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
                     )
                     return
 
-                # Insert team
+                # Insert team (logo_url left NULL — collected separately as image)
                 team_id: int = await conn.fetchval(
                     """
                     INSERT INTO teams
                         (team_name, captain_discord_id, captain_email,
-                         region, logo_url, captain_ign)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                         region, captain_ign)
+                    VALUES ($1, $2, $3, $4, $5)
                     RETURNING team_id
                     """,
-                    team_name, discord_id, email, region, logo, ign,
+                    team_name, discord_id, email, region, ign,
                 )
 
                 # Insert captain as player
@@ -223,10 +285,19 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
         embed.add_field(name="Region", value=f"`{region}`", inline=True)
         embed.add_field(name="Status", value="`Pending Review`", inline=False)
         embed.set_footer(text="VALORANT PC Tournament  •  Registration Portal")
-        if logo:
-            embed.set_thumbnail(url=logo)
 
         await interaction.followup.send(embed=embed)
+
+        # Prompt for logo image in the thread (runs concurrently, doesn't block)
+        if isinstance(interaction.channel, discord.Thread):
+            asyncio.create_task(_collect_logo(
+                interaction.client,
+                interaction.channel,
+                interaction.user,
+                team_id,
+                team_name,
+                pool,
+            ))
 
         # Rename the thread to reflect submission
         if isinstance(interaction.channel, discord.Thread):
@@ -367,8 +438,8 @@ class RegistrationPanelView(discord.ui.View):
                 "• In-Game Name (IGN)\n"
                 "• Team Name\n"
                 "• Region (NA / EU / AP / KR / LATAM / BR / ME)\n"
-                "• Email Address\n"
-                "• Team Logo URL (optional)"
+                "• Email Address\n\n"
+                "After submitting, you will be asked to upload your **team logo** as an image."
             ),
             inline=False,
         )
