@@ -46,7 +46,7 @@ def _save_state(state: dict) -> None:
 
 def _reg_panel_embed() -> discord.Embed:
     embed = discord.Embed(
-        title="🎯  VALORANT PC Tournament — Team Registration",
+        title="VALORANT PC Tournament — Team Registration",
         description=(
             "**Welcome to the official team registration portal.**\n"
             "Read the steps below, then click the button to begin.\n"
@@ -55,7 +55,7 @@ def _reg_panel_embed() -> discord.Embed:
         colour=discord.Colour.from_str("#FF4655"),
     )
     embed.add_field(
-        name="📋  How to Register",
+        name="How to Register",
         value=(
             "**1.** Click **Register Your Team** below\n"
             "**2.** A private thread opens just for you\n"
@@ -66,7 +66,7 @@ def _reg_panel_embed() -> discord.Embed:
         inline=False,
     )
     embed.add_field(
-        name="📌  Requirements",
+        name="Requirements",
         value=(
             "• **5 players** per team (1 optional substitute)\n"
             "• All players in the **same region**\n"
@@ -76,7 +76,7 @@ def _reg_panel_embed() -> discord.Embed:
         inline=False,
     )
     embed.add_field(
-        name="⚠️  Rules",
+        name="Rules",
         value=(
             "• One account per player — no smurfs\n"
             "• Account sharing = instant disqualification\n"
