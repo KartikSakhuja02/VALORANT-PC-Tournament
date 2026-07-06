@@ -1,16 +1,13 @@
 """
-web_server.py — FastAPI verification web server for VALORANT PC Tournament.
-Serves verification pages and API endpoints. Exposed to public internet via Cloudflare Tunnel.
+web_server.py — aiohttp-based verification web server for VALORANT PC Tournament.
+Uses pre-installed aiohttp to completely avoid installation overhead and crashes on Pi.
 """
 
-from contextlib import asynccontextmanager
 import datetime
 import logging
 import secrets
-import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
+import re
+from aiohttp import web
 import asyncpg
 
 import db
@@ -24,32 +21,16 @@ logging.basicConfig(
 log = logging.getLogger("valorant-web")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Setup DB connection pool
+async def on_startup(app: web.Application):
     log.info("Connecting to PostgreSQL pool...")
-    app.state.pool = await db.create_pool()
+    app["db_pool"] = await db.create_pool()
     log.info("Database pool ready.")
-    yield
-    # Close pool on shutdown
+
+
+async def on_cleanup(app: web.Application):
     log.info("Closing database pool...")
-    await app.state.pool.close()
+    await app["db_pool"].close()
     log.info("Database pool closed.")
-
-
-app = FastAPI(
-    title="VALORANT PC Tournament Verification Portal",
-    lifespan=lifespan,
-)
-
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 def _get_base_html(title: str, content_html: str, client_js: str = "") -> str:
@@ -85,7 +66,7 @@ def _get_base_html(title: str, content_html: str, client_js: str = "") -> str:
 
     <!-- Main Section -->
     <main class="flex-grow flex items-center justify-center p-6">
-        <div class="w-full max-w-md bg-zinc-900 border border-zinc-850 p-8 shadow-2xl relative overflow-hidden">
+        <div class="w-full max-w-md bg-zinc-900 border border-zinc-800 p-8 shadow-2xl relative overflow-hidden">
             <!-- Red accent bar -->
             <div class="absolute top-0 left-0 right-0 h-1 bg-red-500"></div>
             {content_html}
@@ -93,7 +74,7 @@ def _get_base_html(title: str, content_html: str, client_js: str = "") -> str:
     </main>
 
     <!-- Footer -->
-    <footer class="bg-zinc-900 border-t border-zinc-850 py-6 text-center text-xs text-zinc-500">
+    <footer class="bg-zinc-900 border-t border-zinc-800 py-6 text-center text-xs text-zinc-500">
         <div class="max-w-4xl mx-auto">
             <p class="font-display tracking-widest text-zinc-400 font-bold uppercase mb-2">VALORANT TOURNAMENT SERIES</p>
             <p>© 2026 VALORANT TOURNAMENT SERIES. ALL RIGHTS RESERVED.</p>
@@ -106,9 +87,9 @@ def _get_base_html(title: str, content_html: str, client_js: str = "") -> str:
 """
 
 
-@app.get("/confirm/{token}", response_class=HTMLResponse)
-async def get_confirm_page(request: Request, token: str):
-    pool: asyncpg.Pool = request.app.state.pool
+async def get_confirm_page(request: web.Request) -> web.Response:
+    token = request.match_info.get("token")
+    pool: asyncpg.Pool = request.app["db_pool"]
 
     # Look up token in DB
     async with pool.acquire() as conn:
@@ -127,28 +108,31 @@ async def get_confirm_page(request: Request, token: str):
         <div class="text-center">
             <h2 class="font-display text-2xl font-bold text-red-500 mb-4">Invalid Activation Link</h2>
             <p class="text-zinc-400 mb-6">This verification link is invalid. Please double check your email or contact support.</p>
-            <div class="h-px bg-zinc-850 my-6"></div>
+            <div class="h-px bg-zinc-800 my-6"></div>
             <p class="text-xs text-zinc-600">Verification Link Error</p>
         </div>
         """
-        return HTMLResponse(_get_base_html("Invalid Token", content))
+        return web.Response(text=_get_base_html("Invalid Token", content), content_type="text/html")
 
     team_name = row["team_name"]
     captain_ign = row["captain_ign"]
     used = row["used"]
     expires_at = row["expires_at"]
-    is_expired = datetime.datetime.now(datetime.timezone.utc) > expires_at
+    
+    # Ensure timezone aware comparison
+    now = datetime.datetime.now(datetime.timezone.utc)
+    is_expired = now > expires_at
 
     if used:
         content = f"""
         <div class="text-center">
             <h2 class="font-display text-2xl font-bold text-emerald-500 mb-4">Already Confirmed</h2>
             <p class="text-zinc-400 mb-6">The team <strong>{team_name}</strong> has already been confirmed. You are ready for the tournament!</p>
-            <div class="h-px bg-zinc-850 my-6"></div>
+            <div class="h-px bg-zinc-800 my-6"></div>
             <p class="text-xs text-emerald-600 font-semibold font-display tracking-widest uppercase">Verified</p>
         </div>
         """
-        return HTMLResponse(_get_base_html("Confirmed", content))
+        return web.Response(text=_get_base_html("Confirmed", content), content_type="text/html")
 
     if is_expired:
         content = f"""
@@ -158,7 +142,7 @@ async def get_confirm_page(request: Request, token: str):
             <button onclick="requestNewToken()" id="action-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-display text-xs font-bold tracking-widest uppercase py-3 transition-colors">
                 Request New Activation Token
             </button>
-            <div class="h-px bg-zinc-850 my-6"></div>
+            <div class="h-px bg-zinc-800 my-6"></div>
             <p class="text-xs text-zinc-600">Token Expired</p>
         </div>
         """
@@ -191,21 +175,21 @@ async def get_confirm_page(request: Request, token: str):
             }}
         </script>
         """
-        return HTMLResponse(_get_base_html("Token Expired", content, client_js))
+        return web.Response(text=_get_base_html("Token Expired", content, client_js), content_type="text/html")
 
     # Valid, unused, not expired token -> show verification button
     content = f"""
     <div class="text-center" id="card-content">
         <h2 class="font-display text-2xl font-bold text-white mb-2">Roster Provisioning</h2>
         <p class="text-zinc-400 text-sm mb-6">Confirm registration for team: <strong class="text-red-500">{team_name}</strong></p>
-        <div class="bg-zinc-950 p-4 border border-zinc-850 text-left mb-6 text-sm flex flex-col gap-2">
+        <div class="bg-zinc-950 p-4 border border-zinc-800 text-left mb-6 text-sm flex flex-col gap-2">
             <div><span class="text-zinc-500">Captain IGN:</span> {captain_ign}</div>
             <div><span class="text-zinc-500">Expires in:</span> <span id="countdown" class="text-red-400 font-mono">Calculating...</span></div>
         </div>
         <button onclick="confirmRegistration()" id="action-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-display text-xs font-bold tracking-widest uppercase py-3 transition-colors">
             Confirm Registration
         </button>
-        <div class="h-px bg-zinc-850 my-6"></div>
+        <div class="h-px bg-zinc-800 my-6"></div>
         <p class="text-xs text-zinc-600">Pending Verification</p>
     </div>
     """
@@ -239,7 +223,7 @@ async def get_confirm_page(request: Request, token: str):
                     document.getElementById("card-content").innerHTML = `
                         <h2 class="font-display text-2xl font-bold text-emerald-500 mb-4">Registration Confirmed</h2>
                         <p class="text-zinc-400 mb-6">Roster provisioned successfully for team <strong>{team_name}</strong>. You are authorized to begin the roster finalization phase on Discord.</p>
-                        <div class="h-px bg-zinc-850 my-6"></div>
+                        <div class="h-px bg-zinc-800 my-6"></div>
                         <p class="text-xs text-emerald-600 font-semibold font-display tracking-widest uppercase">Success</p>
                     `;
                 }} else {{
@@ -256,12 +240,12 @@ async def get_confirm_page(request: Request, token: str):
         }}
     </script>
     """
-    return HTMLResponse(_get_base_html("Confirm Registration", content, client_js))
+    return web.Response(text=_get_base_html("Confirm Registration", content, client_js), content_type="text/html")
 
 
-@app.get("/resend-page/{token}", response_class=HTMLResponse)
-async def get_resend_page(request: Request, token: str):
+async def get_resend_page(request: web.Request) -> web.Response:
     """Fallback page showing a Request New Activation Token button if they navigate directly."""
+    token = request.match_info.get("token")
     content = f"""
     <div class="text-center" id="card-content">
         <h2 class="font-display text-2xl font-bold text-white mb-4">Request New Link</h2>
@@ -269,7 +253,7 @@ async def get_resend_page(request: Request, token: str):
         <button onclick="requestNewToken()" id="action-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-display text-xs font-bold tracking-widest uppercase py-3 transition-colors">
             Request New Activation Token
         </button>
-        <div class="h-px bg-zinc-850 my-6"></div>
+        <div class="h-px bg-zinc-800 my-6"></div>
         <p class="text-xs text-zinc-600">Verification Resend</p>
     </div>
     """
@@ -302,12 +286,12 @@ async def get_resend_page(request: Request, token: str):
         }}
     </script>
     """
-    return HTMLResponse(_get_base_html("Resend Token", content, client_js))
+    return web.Response(text=_get_base_html("Resend Token", content, client_js), content_type="text/html")
 
 
-@app.post("/api/confirm/{token}")
-async def api_confirm_token(request: Request, token: str):
-    pool: asyncpg.Pool = request.app.state.pool
+async def api_confirm_token(request: web.Request) -> web.Response:
+    token = request.match_info.get("token")
+    pool: asyncpg.Pool = request.app["db_pool"]
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -315,13 +299,15 @@ async def api_confirm_token(request: Request, token: str):
             token,
         )
         if not row:
-            raise HTTPException(status_code=404, detail="Token not found.")
+            return web.json_response({"detail": "Token not found."}, status=404)
 
         if row["used"]:
-            raise HTTPException(status_code=400, detail="Token already used.")
+            return web.json_response({"detail": "Token already used."}, status=400)
 
-        if datetime.datetime.now(datetime.timezone.utc) > row["expires_at"]:
-            raise HTTPException(status_code=400, detail="Token has expired.")
+        # Make sure now is offset-aware
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now > row["expires_at"]:
+            return web.json_response({"detail": "Token has expired."}, status=400)
 
         team_id = row["team_id"]
 
@@ -339,12 +325,12 @@ async def api_confirm_token(request: Request, token: str):
             )
 
     log.info(f"Team {team_id} registration confirmed via web server.")
-    return {"status": "success"}
+    return web.json_response({"status": "success"})
 
 
-@app.post("/api/resend/{token}")
-async def api_resend_token(request: Request, token: str):
-    pool: asyncpg.Pool = request.app.state.pool
+async def api_resend_token(request: web.Request) -> web.Response:
+    token = request.match_info.get("token")
+    pool: asyncpg.Pool = request.app["db_pool"]
 
     async with pool.acquire() as conn:
         # Find the team linked to the expired/old token
@@ -359,10 +345,10 @@ async def api_resend_token(request: Request, token: str):
         )
 
         if not row:
-            raise HTTPException(status_code=404, detail="Token not found.")
+            return web.json_response({"detail": "Token not found."}, status=404)
 
         if row["email_confirmed"]:
-            raise HTTPException(status_code=400, detail="Team already confirmed.")
+            return web.json_response({"detail": "Team already confirmed."}, status=400)
 
         team_id = row["team_id"]
         team_name = row["team_name"]
@@ -392,10 +378,24 @@ async def api_resend_token(request: Request, token: str):
         log.info(f"Resent confirmation email to {recipient_email} for team '{team_name}'.")
     except Exception as e:
         log.error(f"Failed to resend confirmation email to {recipient_email}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send confirmation email.")
+        return web.json_response({"detail": "Failed to send confirmation email."}, status=500)
 
-    return {"status": "success"}
+    return web.json_response({"status": "success"})
+
+
+def create_app() -> web.Application:
+    app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
+
+    app.router.add_get("/confirm/{token}", get_confirm_page)
+    app.router.add_get("/resend-page/{token}", get_resend_page)
+    app.router.add_post("/api/confirm/{token}", api_confirm_token)
+    app.router.add_post("/api/resend/{token}", api_resend_token)
+
+    return app
 
 
 if __name__ == "__main__":
-    uvicorn.run("web_server:app", host="0.0.0.0", port=8080)
+    app = create_app()
+    web.run_app(app, host="0.0.0.0", port=8080)
