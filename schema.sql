@@ -36,6 +36,7 @@ CREATE TABLE teams (
     logo_url            TEXT,
     discord_role_id     VARCHAR(32)     UNIQUE,
     registration_status registration_status NOT NULL DEFAULT 'pending',
+    email_confirmed     BOOLEAN         NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
@@ -69,6 +70,16 @@ CREATE TABLE invites (
     used                BOOLEAN         NOT NULL DEFAULT FALSE,
     used_by_discord_id  VARCHAR(32),                         -- NULL until claimed
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+-- ── Email Tokens ──────────────────────────────────────────────────────────────
+
+CREATE TABLE email_tokens (
+    token        VARCHAR(128)    PRIMARY KEY,
+    team_id      INTEGER         NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+    expires_at   TIMESTAMPTZ     NOT NULL,
+    used         BOOLEAN         NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
 -- ── Tournament ────────────────────────────────────────────────────────────────
@@ -120,6 +131,7 @@ CREATE INDEX idx_players_discord_id   ON players (discord_id);
 CREATE INDEX idx_invites_team_id      ON invites (team_id);
 CREATE INDEX idx_invites_player_email ON invites (player_email);
 CREATE INDEX idx_teams_status         ON teams   (registration_status);
+CREATE INDEX idx_email_tokens_team_id ON email_tokens (team_id);
 
 -- =============================================================================
 --  Done. Verify with:

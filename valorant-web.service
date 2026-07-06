@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  valorant-web.service — systemd unit for the VALORANT Tournament Web Server
+#
+#  INSTALLATION (on Raspberry Pi):
+#  1. Copy this file to /etc/systemd/system/valorant-web.service
+#  2. sudo systemctl daemon-reload
+#  3. sudo systemctl enable valorant-web   ← start on boot
+#  4. sudo systemctl start  valorant-web   ← start right now
+#
+#  USEFUL COMMANDS:
+#    sudo systemctl status  valorant-web
+#    sudo systemctl restart valorant-web
+#    sudo systemctl stop    valorant-web
+#    journalctl -u valorant-web -f
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=VALORANT PC Tournament Verification Web Server
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=kartiksakhuja02
+Group=kartiksakhuja02
+
+WorkingDirectory=/home/kartiksakhuja02/Documents/ValorantPCTournament
+ExecStart=/home/kartiksakhuja02/Documents/ValorantPCTournament/venv/bin/python web_server.py
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/kartiksakhuja02/Documents/ValorantPCTournament
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=valorant-web
+
+[Install]
+WantedBy=multi-user.target

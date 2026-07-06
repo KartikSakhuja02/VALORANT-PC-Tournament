@@ -53,34 +53,56 @@ else
     echo "   .env already exists — skipping."
 fi
 
-# ── 5. Install & enable systemd service ──────────────────────────────────────
-echo "▶ [5/5] Installing systemd service..."
+# ── 5. Install & enable systemd services ─────────────────────────────────────
+echo "▶ [5/5] Installing systemd services..."
 
-# Patch the service file paths to match the current directory and user
 CURRENT_USER="$(whoami)"
-TMP_SERVICE=$(mktemp)
 
+# Configure bot service
+TMP_BOT_SERVICE=$(mktemp)
 sed \
-    -e "s|User=pi|User=$CURRENT_USER|g" \
-    -e "s|Group=pi|Group=$CURRENT_USER|g" \
+    -e "s|User=kartiksakhuja02|User=$CURRENT_USER|g" \
+    -e "s|Group=kartiksakhuja02|Group=$CURRENT_USER|g" \
     -e "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT_DIR|g" \
     -e "s|ExecStart=.*|ExecStart=$PROJECT_DIR/venv/bin/python bot.py|g" \
     -e "s|ReadWritePaths=.*|ReadWritePaths=$PROJECT_DIR|g" \
-    "$SERVICE_FILE" > "$TMP_SERVICE"
+    "$SERVICE_FILE" > "$TMP_BOT_SERVICE"
 
-sudo cp "$TMP_SERVICE" "$SYSTEMD_PATH"
-rm "$TMP_SERVICE"
+sudo cp "$TMP_BOT_SERVICE" "$SYSTEMD_PATH"
+rm "$TMP_BOT_SERVICE"
 
+# Configure web service
+WEB_SERVICE_FILE="$PROJECT_DIR/valorant-web.service"
+WEB_SYSTEMD_PATH="/etc/systemd/system/valorant-web.service"
+TMP_WEB_SERVICE=$(mktemp)
+sed \
+    -e "s|User=kartiksakhuja02|User=$CURRENT_USER|g" \
+    -e "s|Group=kartiksakhuja02|Group=$CURRENT_USER|g" \
+    -e "s|WorkingDirectory=.*|WorkingDirectory=$PROJECT_DIR|g" \
+    -e "s|ExecStart=.*|ExecStart=$PROJECT_DIR/venv/bin/python web_server.py|g" \
+    -e "s|ReadWritePaths=.*|ReadWritePaths=$PROJECT_DIR|g" \
+    "$WEB_SERVICE_FILE" > "$TMP_WEB_SERVICE"
+
+sudo cp "$TMP_WEB_SERVICE" "$WEB_SYSTEMD_PATH"
+rm "$TMP_WEB_SERVICE"
+
+# Reload systemd and enable services
 sudo systemctl daemon-reload
+
 sudo systemctl enable "$SERVICE_NAME"
 sudo systemctl restart "$SERVICE_NAME"
+
+sudo systemctl enable valorant-web
+sudo systemctl restart valorant-web
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║              ✅  Setup complete!                 ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
-echo "  Service status:  sudo systemctl status $SERVICE_NAME"
-echo "  Live logs:       journalctl -u $SERVICE_NAME -f"
-echo "  Restart bot:     sudo systemctl restart $SERVICE_NAME"
+echo "  Bot status:   sudo systemctl status $SERVICE_NAME"
+echo "  Web status:   sudo systemctl status valorant-web"
+echo "  Bot logs:     journalctl -u $SERVICE_NAME -f"
+echo "  Web logs:     journalctl -u valorant-web -f"
 echo ""
+

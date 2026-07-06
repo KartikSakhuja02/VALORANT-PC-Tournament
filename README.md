@@ -1,6 +1,6 @@
-# 🎯 VALORANT PC Tournament — Discord Bot
+# 🎯 VALORANT PC Tournament — Discord Bot & Verification Portal
 
-A Discord bot for managing VALORANT PC tournaments, built with **Python** (`discord.py 2.x`) and designed to run 24/7 on a **Raspberry Pi** via systemd.
+A Discord bot for managing VALORANT PC tournaments, built with **Python** (`discord.py 2.x`, `FastAPI`), featuring dynamic email verification using **Google App Passwords** and designed to run 24/7 on a **Raspberry Pi** via systemd and Cloudflare Tunnels.
 
 ---
 
@@ -8,15 +8,19 @@ A Discord bot for managing VALORANT PC tournaments, built with **Python** (`disc
 
 ```
 VALORANT PC Tournament/
-├── bot.py                  ← Main bot entry point
+├── bot.py                  ← Discord bot entry point
 ├── config.py               ← Environment/config loader
+├── db.py                   ← DB connection pool
+├── mailer.py               ← SMTP async mailer & inlined email template
+├── web_server.py           ← FastAPI verification site (port 8080)
+├── schema.sql              ← PostgreSQL DB schema
 ├── requirements.txt        ← Python dependencies
-├── .env.example            ← Secret template (copy → .env)
+├── .env.example            ← Secret template
 ├── .env                    ← Your actual secrets (DO NOT commit)
 ├── .gitignore
-├── valorant-bot.service    ← systemd unit for the Raspberry Pi
-├── setup.sh                ← One-shot Pi setup script
-└── bot.log                 ← Runtime log (auto-created)
+├── valorant-bot.service    ← Bot systemd configuration
+├── valorant-web.service    ← FastAPI systemd configuration
+└── setup.sh                ← One-shot Pi setup script
 ```
 
 ---
@@ -43,109 +47,88 @@ Use this URL (replace `YOUR_CLIENT_ID` with the Application ID from the "General
 https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot+applications.commands&permissions=8
 ```
 
-> **Permissions breakdown** — `permissions=8` is **Administrator**.
-> For a tighter permission set use: `permissions=2147560512`
-> (Manage Roles + Manage Channels + Send Messages + Embed Links + Read Message History + Use Slash Commands)
+---
+
+## 📧 Step 3 — Get Google App Password
+
+Since we are using SMTP to send confirmation emails securely from your Gmail account:
+1. Go to your **Google Account settings** (https://myaccount.google.com/).
+2. Navigate to **Security**.
+3. Under *How you sign in to Google*, select **2-Step Verification** (must be enabled first).
+4. Scroll to the bottom and select **App passwords**.
+5. Select **Other (Custom name)**, type `VALORANT Bot`, and click **Generate**.
+6. Copy the **16-character code** (no spaces). This goes to `SMTP_PASSWORD` in `.env`.
 
 ---
 
-## ⚙️ Step 3 — Configure Your .env
+## ⚙️ Step 4 — Configure Your `.env`
 
 ```bash
 cp .env.example .env
-nano .env   # or open in any text editor
+nano .env
 ```
 
-| Variable | Where to find it |
+| Variable | Value / Where to find it |
 |---|---|
 | `DISCORD_TOKEN` | Bot tab → Token (Step 1) |
-| `GUILD_ID` | Right-click your server icon → Copy Server ID (enable Developer Mode in Discord Settings → Advanced) |
-| `LOG_CHANNEL_ID` | Optional — right-click a text channel → Copy Channel ID |
+| `GUILD_ID` | Server ID |
+| `REGISTRATION_CHANNEL_ID` | Channel ID where the persistent registration panel will reside |
+| `MOD_ROLE_ID` | Role ID of tournament moderators (added to private registration threads) |
+| `SMTP_EMAIL` | Your Gmail address |
+| `SMTP_PASSWORD` | The 16-character App Password (Step 3) |
+| `CONFIRMATION_SERVER_URL` | The public HTTPS address of your Cloudflare Tunnel (Step 6) |
 
 ---
 
-## 💻 Step 4a — Run Locally (for testing)
-
-```bash
-# Create a virtual environment
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Mac/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the bot
-python bot.py
-```
-
----
-
-## 🥧 Step 4b — Deploy to Raspberry Pi (24/7)
+## 🥧 Step 5 — Deploy to Raspberry Pi (24/7)
 
 ### Transfer files to the Pi
-
 ```bash
-# From your Windows machine (using SCP)
-scp -r "VALORANT PC Tournament/" pi@<PI_IP_ADDRESS>:/home/pi/valorant-bot
+# From your Windows machine (replace with actual Pi username and IP)
+scp -r "VALORANT PC Tournament/" kartiksakhuja02@<PI_IP_ADDRESS>:/home/kartiksakhuja02/Documents/ValorantPCTournament
 ```
 
-Or clone from Git if you have a repo.
-
 ### Run the setup script
-
 ```bash
-ssh pi@<PI_IP_ADDRESS>
-cd /home/pi/valorant-bot
+ssh kartiksakhuja02@<PI_IP_ADDRESS>
+cd ~/Documents/ValorantPCTournament
 chmod +x setup.sh
 ./setup.sh
 ```
+The script installs Python packages, sets up a virtual environment, creates a template `.env`, and registers both `valorant-bot` and `valorant-web` services in systemd to run 24/7.
 
-The script will:
-1. Install system dependencies
-2. Create a Python virtual environment
-3. Install all Python packages
-4. Prompt you to fill in `.env`
-5. Install, enable, and start the systemd service
+---
+
+## 🌐 Step 6 — Expose Web Server via Cloudflare Tunnel
+
+Since the verification portal runs on the Pi (`http://localhost:8080`), you can make it public securely and for free with Cloudflare:
+1. **Install cloudflared on Pi:**
+   ```bash
+   sudo mkdir -p --mode=0755 /usr/share/keyrings
+   curl -fsSL https://pkg.cloudflare.com/cloudflare.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-gkeyring.gpg
+   echo "deb [signed-by=/usr/share/keyrings/cloudflare-gkeyring.gpg] https://pkg.cloudflare.com/cloudflared Bullseye main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+   sudo apt-get update && sudo apt-get install cloudflared
+   ```
+2. **Start a free tunnel:**
+   ```bash
+   cloudflared tunnel --url http://localhost:8080
+   ```
+3. Copy the outputted `https://*.trycloudflare.com` URL and put it in your `.env` as `CONFIRMATION_SERVER_URL`. Restart the bot afterwards.
 
 ---
 
 ## 🛠️ Pi Service Management
 
 ```bash
-# Check if the bot is running
+# Check status of Bot and Web Server
 sudo systemctl status valorant-bot
+sudo systemctl status valorant-web
 
-# Start / Stop / Restart
-sudo systemctl start   valorant-bot
-sudo systemctl stop    valorant-bot
+# Restart services
 sudo systemctl restart valorant-bot
+sudo systemctl restart valorant-web
 
-# Watch live logs
+# Live logs
 journalctl -u valorant-bot -f
-```
-
----
-
-## 📜 Available Slash Commands
-
-| Command | Description |
-|---|---|
-| `/ping` | Shows WebSocket latency, REST round-trip, connection quality, and bot uptime |
-
----
-
-## 🚀 Adding More Commands (Cogs)
-
-```
-cogs/
-├── registration.py   ← /register, /team
-├── bracket.py        ← /bracket, /score
-└── admin.py          ← /announce, /kick-team
-```
-
-Load them in `bot.py`:
-
-```python
-await bot.load_extension("cogs.registration")
+journalctl -u valorant-web -f
 ```

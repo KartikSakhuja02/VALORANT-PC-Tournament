@@ -42,3 +42,8 @@ DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
 DB_NAME: str = _require("DB_NAME")
 DB_USER: str = _require("DB_USER")
 DB_PASSWORD: str = _require("DB_PASSWORD")
+
+# ── SMTP & Confirmation URL ──────────────────────────────────────────────────
+SMTP_EMAIL: str = _require("SMTP_EMAIL")
+SMTP_PASSWORD: str = _require("SMTP_PASSWORD")
+CONFIRMATION_SERVER_URL: str = _require("CONFIRMATION_SERVER_URL")

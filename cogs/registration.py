@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from datetime import datetime, timezone
 
 import asyncpg
@@ -164,6 +165,36 @@ async def _collect_logo(
     await thread.send("Logo saved. Your registration is complete.")
 
 
+async def _send_verification_and_collect_logo(
+    client: discord.Client,
+    thread: discord.Thread,
+    user: discord.Member,
+    team_id: int,
+    team_name: str,
+    ign: str,
+    email: str,
+    token: str,
+    pool: asyncpg.Pool,
+) -> None:
+    """
+    Background task:
+    1. Sends the SMTP email using mailer.py.
+    2. Tells user to check their email.
+    3. Runs logo collection process.
+    """
+    status_msg = await thread.send("Generating and sending verification email...")
+    try:
+        import mailer
+        await mailer.send_confirmation_email(email, ign, token)
+        await status_msg.edit(content="Please check your gmail to confirm your team (check spam folders too).")
+    except Exception as e:
+        log.exception(f"Failed to send confirmation email to {email}")
+        await status_msg.edit(content="Failed to send verification email. Please contact a moderator to verify manually.")
+
+    # Continue with logo collection
+    await _collect_logo(client, thread, user, team_id, team_name, pool)
+
+
 # ── Modal ─────────────────────────────────────────────────────────────────────
 
 class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
@@ -256,6 +287,16 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
                     team_id, discord_id, email, ign, region,
                 )
 
+                # Generate secure 1-hour verification token
+                token = secrets.token_urlsafe(32)
+                await conn.execute(
+                    """
+                    INSERT INTO email_tokens (token, team_id, expires_at)
+                    VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+                    """,
+                    token, team_id,
+                )
+
         except asyncpg.UniqueViolationError:
             await interaction.followup.send(
                 "Registration failed: duplicate team name or captain.",
@@ -288,14 +329,17 @@ class TeamRegistrationModal(discord.ui.Modal, title="Team Registration"):
 
         await interaction.followup.send(embed=embed)
 
-        # Prompt for logo image in the thread (runs concurrently, doesn't block)
+        # Send verification email & collect logo concurrently
         if isinstance(interaction.channel, discord.Thread):
-            asyncio.create_task(_collect_logo(
+            asyncio.create_task(_send_verification_and_collect_logo(
                 interaction.client,
                 interaction.channel,
                 interaction.user,
                 team_id,
                 team_name,
+                ign,
+                email,
+                token,
                 pool,
             ))
 
