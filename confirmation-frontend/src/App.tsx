@@ -51,7 +51,11 @@ function App() {
     const fetchTokenInfo = async () => {
       try {
         setLoading(true)
-        const response = await fetch(`${apiHost}/api/token-info/${token}`)
+        const response = await fetch(`${apiHost}/api/token-info/${token}`, {
+          headers: {
+            'ngrok-skip-browser-warning': 'true',
+          },
+        })
         if (!response.ok) {
           if (response.status === 404) {
             setError('Invalid Activation Link')
@@ -106,6 +110,9 @@ function App() {
     try {
       const response = await fetch(`${apiHost}/api/confirm/${token}`, {
         method: 'POST',
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
       })
       if (response.ok) {
         setConfirmSuccess(true)
@@ -126,6 +133,9 @@ function App() {
     try {
       const response = await fetch(`${apiHost}/api/resend/${token}`, {
         method: 'POST',
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
       })
       if (response.ok) {
         setResendSuccess(true)
