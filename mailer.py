@@ -15,8 +15,8 @@ log = logging.getLogger("valorant-bot.mailer")
 
 def _get_email_html(captain_ign: str, token: str) -> str:
     """Generate the HTML body for the confirmation email with inlined styles."""
-    confirm_url = f"{config.CONFIRMATION_SERVER_URL}/confirm/{token}"
-    resend_url = f"{config.CONFIRMATION_SERVER_URL}/resend-page/{token}"
+    confirm_url = f"{config.VERCEL_WEBPAGE_URL}/?token={token}&api={config.CONFIRMATION_SERVER_URL}"
+    resend_url = f"{config.VERCEL_WEBPAGE_URL}/?token={token}&api={config.CONFIRMATION_SERVER_URL}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -179,8 +179,8 @@ async def send_confirmation_email(recipient_email: str, captain_ign: str, token:
     msg["To"] = recipient_email
 
     # Plain text fallback
-    confirm_url = f"{config.CONFIRMATION_SERVER_URL}/confirm/{token}"
-    resend_url = f"{config.CONFIRMATION_SERVER_URL}/resend-page/{token}"
+    confirm_url = f"{config.VERCEL_WEBPAGE_URL}/?token={token}&api={config.CONFIRMATION_SERVER_URL}"
+    resend_url = f"{config.VERCEL_WEBPAGE_URL}/?token={token}&api={config.CONFIRMATION_SERVER_URL}"
     text_content = (
         f"Welcome to the Tournament, {captain_ign}!\n\n"
         f"Please confirm your team registration by visiting the following link within 1 hour:\n"

@@ -383,13 +383,66 @@ async def api_resend_token(request: web.Request) -> web.Response:
     return web.json_response({"status": "success"})
 
 
+@web.middleware
+async def cors_middleware(request: web.Request, handler) -> web.Response:
+    if request.method == "OPTIONS":
+        response = web.Response(status=204)
+    else:
+        try:
+            response = await handler(request)
+        except web.HTTPException as ex:
+            response = ex
+        except Exception as e:
+            log.exception("Unhandled error in handler")
+            response = web.json_response({"detail": str(e)}, status=500)
+    
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+
+
+async def api_token_info(request: web.Request) -> web.Response:
+    token = request.match_info.get("token")
+    pool: asyncpg.Pool = request.app["db_pool"]
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT et.token, et.team_id, et.expires_at, et.used, t.team_name, t.captain_ign, t.email_confirmed
+            FROM email_tokens et
+            JOIN teams t ON et.team_id = t.team_id
+            WHERE et.token = $1
+            """,
+            token,
+        )
+
+    if not row:
+        return web.json_response({"valid": False}, status=404)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    is_expired = now > row["expires_at"]
+
+    return web.json_response({
+        "valid": True,
+        "used": row["used"],
+        "team_id": row["team_id"],
+        "team_name": row["team_name"],
+        "captain_ign": row["captain_ign"],
+        "email_confirmed": row["email_confirmed"],
+        "expires_at": row["expires_at"].timestamp(),
+        "is_expired": is_expired
+    })
+
+
 def create_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[cors_middleware])
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
 
     app.router.add_get("/confirm/{token}", get_confirm_page)
     app.router.add_get("/resend-page/{token}", get_resend_page)
+    app.router.add_get("/api/token-info/{token}", api_token_info)
     app.router.add_post("/api/confirm/{token}", api_confirm_token)
     app.router.add_post("/api/resend/{token}", api_resend_token)
 
