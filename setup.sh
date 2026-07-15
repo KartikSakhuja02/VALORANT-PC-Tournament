@@ -86,6 +86,18 @@ sed \
 sudo cp "$TMP_WEB_SERVICE" "$WEB_SYSTEMD_PATH"
 rm "$TMP_WEB_SERVICE"
 
+# Configure tunnel service
+TUNNEL_SERVICE_FILE="$PROJECT_DIR/valorant-tunnel.service"
+TUNNEL_SYSTEMD_PATH="/etc/systemd/system/valorant-tunnel.service"
+TMP_TUNNEL_SERVICE=$(mktemp)
+sed \
+    -e "s|User=kartiksakhuja02|User=$CURRENT_USER|g" \
+    -e "s|Group=kartiksakhuja02|Group=$CURRENT_USER|g" \
+    "$TUNNEL_SERVICE_FILE" > "$TMP_TUNNEL_SERVICE"
+
+sudo cp "$TMP_TUNNEL_SERVICE" "$TUNNEL_SYSTEMD_PATH"
+rm "$TMP_TUNNEL_SERVICE"
+
 # Reload systemd and enable services
 sudo systemctl daemon-reload
 
@@ -95,14 +107,20 @@ sudo systemctl restart "$SERVICE_NAME"
 sudo systemctl enable valorant-web
 sudo systemctl restart valorant-web
 
+sudo systemctl enable valorant-tunnel
+sudo systemctl restart valorant-tunnel
+
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║              ✅  Setup complete!                 ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
-echo "  Bot status:   sudo systemctl status $SERVICE_NAME"
-echo "  Web status:   sudo systemctl status valorant-web"
-echo "  Bot logs:     journalctl -u $SERVICE_NAME -f"
-echo "  Web logs:     journalctl -u valorant-web -f"
+echo "  Bot status:    sudo systemctl status $SERVICE_NAME"
+echo "  Web status:    sudo systemctl status valorant-web"
+echo "  Tunnel status: sudo systemctl status valorant-tunnel"
+echo "  Bot logs:      journalctl -u $SERVICE_NAME -f"
+echo "  Web logs:      journalctl -u valorant-web -f"
+echo "  Tunnel logs:   journalctl -u valorant-tunnel -f"
 echo ""
+
 

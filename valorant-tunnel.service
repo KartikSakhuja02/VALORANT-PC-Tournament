@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  valorant-tunnel.service — systemd unit for the VALORANT Tournament ngrok Tunnel
+#
+#  INSTALLATION (on Raspberry Pi):
+#  1. Copy this file to /etc/systemd/system/valorant-tunnel.service
+#  2. sudo systemctl daemon-reload
+#  3. sudo systemctl enable valorant-tunnel   ← start on boot
+#  4. sudo systemctl start  valorant-tunnel   ← start right now
+#
+#  USEFUL COMMANDS:
+#    sudo systemctl status  valorant-tunnel
+#    sudo systemctl restart valorant-tunnel
+#    sudo systemctl stop    valorant-tunnel
+#    journalctl -u valorant-tunnel -f
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=VALORANT PC Tournament ngrok Tunnel
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+User=kartiksakhuja02
+Group=kartiksakhuja02
+
+# Absolute path to the ngrok binary
+ExecStart=/usr/local/bin/ngrok http --url=sammy-glaring-heartenedly.ngrok-free.dev 8080
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=valorant-tunnel
+
+[Install]
+WantedBy=multi-user.target
